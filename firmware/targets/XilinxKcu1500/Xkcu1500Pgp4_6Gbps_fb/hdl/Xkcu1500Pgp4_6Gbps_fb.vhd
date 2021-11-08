@@ -29,7 +29,7 @@ use axi_pcie_core.AxiPciePkg.all;
 library unisim;
 use unisim.vcomponents.all;
 
-entity XilinxKcu1500Pgp4_6Gbps_lockerapp is
+entity Xkcu1500Pgp4_6Gbps_fb is
    generic (
       TPD_G                : time                        := 1 ns;
       ROGUE_SIM_EN_G       : boolean                     := false;
@@ -88,9 +88,9 @@ entity XilinxKcu1500Pgp4_6Gbps_lockerapp is
       pciRxN       : in    slv(7 downto 0);
       pciTxP       : out   slv(7 downto 0);
       pciTxN       : out   slv(7 downto 0));
-end XilinxKcu1500Pgp4_6Gbps_lockerapp;
+end Xkcu1500Pgp4_6Gbps_fb;
 
-architecture top_level of XilinxKcu1500Pgp4_6Gbps_lockerapp is
+architecture top_level of Xkcu1500Pgp4_6Gbps_fb is
 
    signal userClk156      : sl;
    signal axilClk         : sl;
