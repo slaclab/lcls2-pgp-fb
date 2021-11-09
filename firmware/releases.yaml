@@ -1,0 +1,30 @@
+
+GitBase: ..
+
+TopRoguePackage: lcls2_pgp_fb
+
+RoguePackages:
+  - submodules/axi-pcie-core/python
+  - submodules/surf/python
+#  - python     
+
+#RogueConfig:
+#  - ../software/config
+
+RogueScripts:
+  - submodules/axi-pcie-core/scripts/updatePcieFpga
+  - ../software/scripts/devGui
+
+Targets:
+  Xkcu1500Pgp4_6Gbps_fb:
+    ImageDir: targets/XilinxKcu1500/Xkcu1500Pgp4_6Gbps_fb/images
+    Extensions:
+      - mcs      
+
+Releases:
+  lcls2_pgp_fb:
+    Primary: True
+    Targets:
+      - Xkcu1500Pgp4_6Gbps_fb
+    Types:
+      - Rogue
