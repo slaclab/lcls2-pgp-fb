@@ -299,4 +299,4 @@ begin
          axilReadSlave     => axilReadSlaves  (ASS_INDEX_C)
       );
    
-end top_level;
+end architecture top_level;
