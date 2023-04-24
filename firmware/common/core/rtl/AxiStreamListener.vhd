@@ -30,16 +30,16 @@ entity AxiStreamListener is
     saxisClk          : in  sl;
     saxisRst          : in  sl;
     saxisObMasters    : in  AxiStreamMasterArray(7 downto 0);
-    saxisObSlaves     : in  AxiStreamSlaveArray (7 downto 0);
+    saxisObSlaves     : out AxiStreamSlaveArray (7 downto 0);
     saxisIbMasters    : out AxiStreamMasterArray(7 downto 0);
-    saxisIbSlaves     : out AxiStreamSlaveArray (7 downto 0);
+    saxisIbSlaves     : in  AxiStreamSlaveArray (7 downto 0);
 
     maxisClk          : in  sl;
     maxisRst          : in  sl;
     maxisObMasters    : out AxiStreamMasterArray(7 downto 0);
-    maxisObSlaves     : out AxiStreamSlaveArray (7 downto 0);
+    maxisObSlaves     : in  AxiStreamSlaveArray (7 downto 0);
     maxisIbMasters    : in  AxiStreamMasterArray(7 downto 0);
-    maxisIbSlaves     : in  AxiStreamSlaveArray (7 downto 0);
+    maxisIbSlaves     : out AxiStreamSlaveArray (7 downto 0);
 
     axilClk           : in  sl;
     axilRst           : in  sl;
@@ -69,7 +69,7 @@ architecture rtl of AxiStreamListener is
    signal monRegs         : Slv32Array(7 downto 0);
    signal monRegsSync     : Slv32Array(7 downto 0);
 
-   begin
+begin
 
    swMasters(0) <= AXI_STREAM_MASTER_INIT_C;
    swSlaves (0) <= AXI_STREAM_SLAVE_FORCE_C;
@@ -186,9 +186,9 @@ architecture rtl of AxiStreamListener is
        axiClk         => axilClk,
        axiClkRst      => axilRst,
        axiWriteMaster => axilWriteMaster,
-       axiWriteSlave  => axilWriteSlaves,
-       axiReadMaster  => axilReadMasters,
-       axiReadSlave   => axilReadSlaves,
+       axiWriteSlave  => axilWriteSlave,
+       axiReadMaster  => axilReadMaster,
+       axiReadSlave   => axilReadSlave,
        writeRegister  => axilRegs,
        readRegister   => monRegsSync );
 
@@ -243,3 +243,4 @@ architecture rtl of AxiStreamListener is
       start           => axilRegsSync(1)(15 downto 0),
       monRegs         => monRegs(7 downto 4));
 
+end architecture rtl;

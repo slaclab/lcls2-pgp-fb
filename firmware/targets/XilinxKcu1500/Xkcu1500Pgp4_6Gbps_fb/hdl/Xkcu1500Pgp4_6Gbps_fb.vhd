@@ -279,10 +279,10 @@ begin
          qsfp1TxP        => qsfp1TxP,
          qsfp1TxN        => qsfp1TxN);
 
-   U_Listener : entity AxiStreamListener
+   U_Listener : entity work.AxiStreamListener
       generic map (
          TPD_G             => TPD_G,
-         AXIS_CONFIG_G     => AXIS_CONFIG_G )
+         AXIS_CONFIG_G     => DMA_AXIS_CONFIG_G )
       port map (
          saxisClk          => dmaClk,
          saxisRst          => dmaRst,
