@@ -47,34 +47,67 @@ end AxiStreamSlice;
 
 architecture behavior of AxiStreamSlice is
 
-  constant NBYTES_C : integer := 8;
-  
-  type StateType is ( IDLE_S, FIRST_S, SECOND_S, FLUSH_S );
+  type StateType is ( IDLE_S, SKIP_S, SEND_S );
 
   type RegType is record
-    start   : slv(15 downto 0);
-    remain  : slv( 3 downto 0);
+    word    : slv(11 downto 0);
     monRegs : Slv32Array(3 downto 0);
     state   : StateType;
     master  : AxiStreamMasterType;
     slave   : AxiStreamSlaveType;
+    tId     : slv(7 downto 0);
+    tDest   : slv(7 downto 0);
   end record;
 
   constant REG_INIT_C : RegType := (
-    start    => (others=>'0'),
-    remain   => (others=>'0'),
+    word     => (others=>'0'),
     monRegs  => (others=>(others=>'0')),
     state    => IDLE_S,
     master   => AXI_STREAM_MASTER_INIT_C,
-    slave    => AXI_STREAM_SLAVE_INIT_C
+    slave    => AXI_STREAM_SLAVE_INIT_C,
+    tId      => (others=>'0'),
+    tDest    => (others=>'0')
     );
 
    signal r   : RegType := REG_INIT_C;
    signal rin : RegType;
 
+  signal shiftstart : sl;
+  signal startbyte : slv( 3 downto 0);
+  signal startword : slv(11 downto 0);
+  constant WORD_BITS_C : integer := log2(AXIS_CONFIG_G.TDATA_BYTES_C);
+
+  signal taxisMaster : AxiStreamMasterType;
+  signal taxisSlave  : AxiStreamSlaveType;
+  
 begin
 
-  comb : process ( r, axisRst, saxisMaster, maxisSlave, start ) is
+  shiftstart <= not saxisMaster.tValid;
+  startbyte  <= resize(start(WORD_BITS_C downto 0),startbyte'length);
+  startword  <= resize(start(start'left downto WORD_BITS_C),startword'length);
+  
+  U_Shift : entity surf.AxiStreamShift
+    generic map (
+      TPD_G          => TPD_G,
+      AXIS_CONFIG_G  => AXIS_CONFIG_G,
+      PIPE_STAGES_G  => 1 )
+--      ADD_VALID_EN_G : boolean               := false;
+   port map (
+      -- Clock and reset
+      axisClk     => axisClk,
+      axisRst     => axisRst,
+      -- Start control
+      axiStart    => shiftstart,
+      axiShiftDir => '1', -- right
+      axiShiftCnt => startbyte,
+      -- Slave
+      sAxisMaster => saxisMaster,
+      sAxisSlave  => saxisSlave,
+      -- Master
+      mAxisMaster => taxisMaster,
+      mAxisSlave  => taxisSlave );
+  
+  comb : process ( r, axisRst, taxisMaster, maxisSlave, startword ) is
     variable v    : RegType;
     variable i    : integer;
   begin
@@ -90,84 +123,63 @@ begin
            
         when IDLE_S =>
           v.monRegs(0) := toSlv(0,32);
-          if saxisMaster.tValid = '1' and v.master.tValid = '0' then
-            v.monRegs(1) := r.monRegs(1)+1;
-            v.slave.tReady := '1';
-            v.master := saxisMaster;
-            v.master.tValid := '0';
-            i := conv_integer(start);
-            if i < AXIS_CONFIG_G.TDATA_BYTES_C then
-              v.master.tData(8*NBYTES_C-1 downto 0) := saxisMaster.tData(8*(i+NBYTES_C)-1 downto 8*i);
-              if i + NBYTES_C <= AXIS_CONFIG_G.TDATA_BYTES_C then
-                v.monRegs(2) := r.monRegs(2)+1;
-                v.master.tValid := '1';
-                v.master.tLast  := '1';
-                v.state         := FLUSH_S;
-              else
-                v.remain := toSlv(i + NBYTES_C - AXIS_CONFIG_G.TDATA_BYTES_C,v.remain'length);
-                v.state  := SECOND_S;
+          if taxisMaster.tValid = '1' and v.master.tValid = '0' then
+            v.monRegs(1)      := r.monRegs(1)+1;
+            v.slave.tReady    := '1';
+            v.master          := taxisMaster;
+            v.master.tValid   := '0';
+            if startword = 0 then
+              v.master.tValid := '1';
+              v.monRegs(2)    := r.monRegs(2)+1;
+              if taxisMaster.tLast = '0' then
+                v.state       := SEND_S;
               end if;
             else
-              v.start := toSlv(i - AXIS_CONFIG_G.TDATA_BYTES_C, 16);
-              v.state := FIRST_S;
+              v.tId           := taxisMaster.tId;
+              v.tDest         := taxisMaster.tDest;
+              v.word          := toSlv(1,12);
+              v.state         := SKIP_S;
             end if;
           end if;
 
-        when FIRST_S =>
+        when SKIP_S =>
           v.monRegs(0) := toSlv(1,32);
-          if saxisMaster.tValid = '1' then
-            v.slave.tReady := '1';
-            i := conv_integer(r.start);
-            if i < AXIS_CONFIG_G.TDATA_BYTES_C then
-              v.master.tData(8*NBYTES_C-1 downto 0) := saxisMaster.tData(8*(i+NBYTES_C)-1 downto 8*i);
-              if i + NBYTES_C <= AXIS_CONFIG_G.TDATA_BYTES_C then
-                v.monRegs(2) := r.monRegs(2)+1;
-                v.master.tValid := '1';
-                v.master.tLast  := '1';
-                v.state := FLUSH_S;
-                if saxisMaster.tLast = '1' then
-                  v.state := IDLE_S;
-                end if;
+          if taxisMaster.tValid = '1' and v.master.tValid = '0' then
+            v.slave.tReady    := '1';
+            v.master          := taxisMaster;
+            v.master.tValid   := '0';
+            v.master.tId      := r.tId;
+            v.master.tDest    := r.tDest;
+            v.word            := r.word+1;
+            if r.word = startword then
+              v.master.tValid := '1';
+              v.monRegs(2)    := r.monRegs(2)+1;
+              if taxisMaster.tLast = '1' then
+                v.state       := IDLE_S;
               else
-                v.remain := toSlv(i + NBYTES_C - AXIS_CONFIG_G.TDATA_BYTES_C,v.remain'length);
-                v.state  := SECOND_S;
+                v.state       := SEND_S;
               end if;
-            else
-              v.start := toSlv(i - AXIS_CONFIG_G.TDATA_BYTES_C, 16);
-              v.state := FIRST_S;
             end if;
-          end if;
-            
-        when SECOND_S =>
-          v.monRegs(0) := toSlv(2,32);
-          if saxisMaster.tValid = '1' then
-            v.slave.tReady := '1';
-            i := conv_integer(r.remain);
-            v.master.tData(8*NBYTES_C-1 downto 8*(NBYTES_C-i)) := saxisMaster.tData(8*i-1 downto 0);
-            v.monRegs(2) := r.monRegs(2)+1;
-            v.master.tValid := '1';
-            v.master.tLast  := '1';
-            v.state         := FLUSH_S;
-            if saxisMaster.tLast = '1' then
-              v.state := IDLE_S;
-            end if;
-          end if;
-            
-        -- Flushing data
-        when FLUSH_S =>
-          -- Dump until we see tlast
-          v.monRegs(0) := toSlv(3,32);
-          v.slave.tReady := '1';
-          if saxisMaster.tValid = '1' and saxisMaster.tLast = '1' then
-            v.state := IDLE_S;
           end if;
 
+        when SEND_S =>
+          v.monRegs(0) := toSlv(2,32);
+          if taxisMaster.tValid = '1' and v.master.tValid = '0' then
+            v.slave.tReady    := '1';
+            v.master          := taxisMaster;
+            v.master.tValid   := '1';
+            v.monRegs(2)      := r.monRegs(2)+1;
+            if taxisMaster.tLast = '1' then
+              v.state         := IDLE_S;
+            end if;
+          end if;
+          
         when others =>
-          v.monRegs(0) := toSlv(4,32);
+          v.monRegs(0) := toSlv(3,32);
           v.state := IDLE_S;
       end case;
 
-      saxisSlave <= v.slave;
+      taxisSlave <= v.slave;
 
       if axisRst = '1' then
          v := REG_INIT_C;

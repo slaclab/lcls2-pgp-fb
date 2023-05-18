@@ -140,7 +140,8 @@ begin
          CLKIN_PERIOD_G    => 6.4,      -- 156.25 MHz
          CLKFBOUT_MULT_G   => 8,        -- 1.25GHz = 8 x 156.25 MHz
          CLKOUT0_DIVIDE_G  => 8,        -- 156.25MHz = 1.25GHz/8
-         CLKOUT1_DIVIDE_G  => 6)        -- 208.33MHz = 1.25GHz/6
+--         CLKOUT1_DIVIDE_G  => 6)        -- 208.33MHz = 1.25GHz/6
+         CLKOUT1_DIVIDE_G  => 8)
       port map(
          -- Clock Input
          clkIn     => userClk156,

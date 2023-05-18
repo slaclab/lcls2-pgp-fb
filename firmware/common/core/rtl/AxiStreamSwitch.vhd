@@ -31,7 +31,7 @@ entity AxiStreamSwitch is
    generic (
       TPD_G                : time                        := 1 ns;
       NUM_SLAVES_G         : integer                     := 8;
-      AXI_BASE_ADDR_G      : slv(31 downto 0)            := (others=>'0')
+      SLAVE0_INDEX_G       : integer                     := 0
       );
    port (
      axisClk      : in  sl;
@@ -80,8 +80,8 @@ begin
 
       v.monRegs(0) := resize(r.forward,32);
       v.slaves := (others=>AXI_STREAM_SLAVE_FORCE_C);
-      ifwd     := conv_integer(r.forward);
-
+      ifwd     := conv_integer(r.forward)-SLAVE0_INDEX_G;
+      
       if maxisSlave.tReady = '1' then
         v.master.tValid := '0';
       end if;
@@ -91,10 +91,15 @@ begin
         when IDLE_S =>
           v.monRegs(1) := toSlv(0,32);
           v.forward := forward;
-          v.slaves(conv_integer(v.forward)) := AXI_STREAM_SLAVE_INIT_C;
-          if saxisMasters(conv_integer(v.forward)).tValid = '1' then
-            v.monRegs(2) := r.monRegs(2)+1;
-            v.state := MOVE_S;
+          if conv_integer(v.forward) < SLAVE0_INDEX_G then
+            null;
+          else
+            ifwd := conv_integer(v.forward)-SLAVE0_INDEX_G;
+            v.slaves(ifwd) := AXI_STREAM_SLAVE_INIT_C;
+            if saxisMasters(ifwd).tValid = '1' then
+              v.monRegs(2) := r.monRegs(2)+1;
+              v.state := MOVE_S;
+            end if;
           end if;
                
         when MOVE_S =>

@@ -58,25 +58,26 @@ architecture rtl of AxiStreamListener is
    signal tmSlaves        : AxiStreamSlaveArray (7 downto 0);
    signal tsMasters       : AxiStreamMasterArray(7 downto 0);
    signal tsSlaves        : AxiStreamSlaveArray (7 downto 0);
-   signal rpMasters       : AxiStreamDualMasterArray(7 downto 0);
-   signal rpSlaves        : AxiStreamDualSlaveArray (7 downto 0);
-   signal swMasters       : AxiStreamMasterArray(7 downto 0);
-   signal swSlaves        : AxiStreamSlaveArray (7 downto 0);
-   signal appObMaster     : AxiStreamMasterType;
-   signal appObSlave      : AxiStreamSlaveType;
-   signal axilRegs        : Slv32Array(1 downto 0);
-   signal axilRegsSync    : Slv32Array(1 downto 0);
-   signal monRegs         : Slv32Array(7 downto 0);
-   signal monRegsSync     : Slv32Array(7 downto 0);
+
+   constant NSW_C : integer := 2;
+   type RpMasterArray is array(natural range<>) of AxiStreamMasterArray(2 downto 0);
+   type RpSlaveArray  is array(natural range<>) of AxiStreamSlaveArray (2 downto 0);
+   type SwMasterArray is array(natural range<>) of AxiStreamMasterArray(7 downto NSW_C);
+   type SwSlaveArray  is array(natural range<>) of AxiStreamSlaveArray (7 downto NSW_C);
+   signal rpMasters       : RpMasterArray(7 downto 0);
+   signal rpSlaves        : RpSlaveArray (7 downto 0);
+   signal swMasters       : SwMasterArray(NSW_C-1 downto 0);
+   signal swSlaves        : SwSlaveArray (NSW_C-1 downto 0);
+   signal appObMaster     : AxiStreamMasterArray(NSW_C-1 downto 0);
+   signal appObSlave      : AxiStreamSlaveArray (NSW_C-1 downto 0);
+   signal axilRegs        : Slv32Array(2*NSW_C-1 downto 0);
+   signal axilRegsSync    : Slv32Array(2*NSW_C-1 downto 0);
+   signal monRegs         : Slv32Array(8*NSW_C-1 downto 0);
+   signal monRegsSync     : Slv32Array(8*NSW_C-1 downto 0);
 
 begin
 
-   swMasters(0) <= AXI_STREAM_MASTER_INIT_C;
-   swSlaves (0) <= AXI_STREAM_SLAVE_FORCE_C;
-   tmMasters(0) <= AXI_STREAM_MASTER_INIT_C;
-   tmSlaves (0) <= AXI_STREAM_SLAVE_FORCE_C;
-   
-   GEN_LANE : for lane in 7 downto 1 generate
+   GEN_LANE : for lane in 7 downto NSW_C generate
      
       U_Tap : entity surf.AxiStreamTap
          generic map (
@@ -97,8 +98,9 @@ begin
       U_REPEAT : entity surf.AxiStreamRepeater
         generic map (
           TPD_G               => TPD_G,
-          NUM_MASTERS_G       => 2,
-          INPUT_PIPE_STAGES_G => 1
+          NUM_MASTERS_G       => 3,
+          INPUT_PIPE_STAGES_G => 1,
+          OUTPUT_PIPE_STAGES_G => 1
           )
         port map (
           axisClk      => maxisClk,
@@ -120,9 +122,6 @@ begin
           saxisSlave  => rpSlaves (lane)(0),
           maxisMaster => tsMasters(lane),
           maxisSlave  => tsSlaves (lane) );
-
-      swMasters(lane)    <= rpMasters(lane)(1);
-      rpSlaves (lane)(1) <= swSlaves (lane);
 
       U_SaxisIbFifo : entity surf.AxiStreamFifoV2
         generic map (
@@ -155,6 +154,11 @@ begin
           mAxisRst     => maxisRst,
           mAxisMaster  => maxisObMasters(lane),
           mAxisSlave   => maxisObSlaves (lane) );
+
+      GEN_SW : for sw in NSW_C-1 downto 0 generate
+        swMasters(sw)(lane)    <= rpMasters(lane)(sw+1);
+        rpSlaves (lane)(sw+1)  <= swSlaves (sw)(lane);
+      end generate GEN_SW;
       
    end generate GEN_LANE;
 
@@ -180,8 +184,8 @@ begin
    U_AxiLite : entity surf.AxiLiteRegs
      generic map (
        TPD_G           => TPD_G,
-       NUM_WRITE_REG_G => 2,
-       NUM_READ_REG_G  => 8 )
+       NUM_WRITE_REG_G => axilRegs'length,
+       NUM_READ_REG_G  => monRegsSync'length )
      port map (
        axiClk         => axilClk,
        axiClkRst      => axilRst,
@@ -192,7 +196,7 @@ begin
        writeRegister  => axilRegs,
        readRegister   => monRegsSync );
 
-   GEN_SYNCWR : for i in 0 to 1 generate
+   GEN_SYNCWR : for i in axilRegs'range generate
      U_SyncReg : entity surf.SynchronizerVector
        generic map (
          TPD_G         => TPD_G,
@@ -213,34 +217,42 @@ begin
          dataIn     => monRegs    (i),
          dataOut    => monRegsSync(i) );
    end generate GEN_SYNCRD;
+
+   GEN_SW : for sw in NSW_C-1 downto 0 generate
+--     swMasters(sw)(NSW_C-1 downto 0) <= (others=>AXI_STREAM_MASTER_INIT_C);
+--     swSlaves (sw)(NSW_C-1 downto 0) <= (others=>AXI_STREAM_SLAVE_FORCE_C);
+     tmMasters(sw) <= AXI_STREAM_MASTER_INIT_C;
+     tmSlaves (sw) <= AXI_STREAM_SLAVE_FORCE_C;
    
-   U_FWD : entity work.AxiStreamSwitch
-     generic map (
-       TPD_G           => TPD_G,
-       NUM_SLAVES_G    => 8 )
-     port map (
-       axisClk         => maxisClk,
-       axisRst         => maxisRst,
-       saxisMasters    => swMasters,
-       saxisSlaves     => swSlaves,
-       maxisMaster     => appObMaster,
-       maxisSlave      => appObSlave,
-       forward         => axilRegsSync(0)(2 downto 0),
-       monRegs         => monRegs(3 downto 0));
+     U_FWD : entity work.AxiStreamSwitch
+       generic map (
+         TPD_G           => TPD_G,
+         NUM_SLAVES_G    => 8-NSW_C,
+         SLAVE0_INDEX_G  => NSW_C  )
+       port map (
+         axisClk         => maxisClk,
+         axisRst         => maxisRst,
+         saxisMasters    => swMasters  (sw),
+         saxisSlaves     => swSlaves   (sw),
+         maxisMaster     => appObMaster(sw),
+         maxisSlave      => appObSlave (sw),
+         forward         => axilRegsSync(2*sw+0)(2 downto 0),
+         monRegs         => monRegs(8*sw+3 downto 8*sw+0));
 
-  U_SLICE : entity work.AxiStreamSlice
-    generic map (
-      TPD_G           => TPD_G,
-      AXIS_CONFIG_G   => AXIS_CONFIG_G,
-      AXI_BASE_ADDR_G => (others=>'0') )
-    port map (
-      axisClk         => maxisClk,
-      axisRst         => maxisRst,
-      saxisMaster     => appObMaster,
-      saxisSlave      => appObSlave,
-      maxisMaster     => maxisObMasters(0),
-      maxisSlave      => maxisObSlaves (0),
-      start           => axilRegsSync(1)(15 downto 0),
-      monRegs         => monRegs(7 downto 4));
-
+     U_SLICE : entity work.AxiStreamSlice
+       generic map (
+         TPD_G           => TPD_G,
+         AXIS_CONFIG_G   => AXIS_CONFIG_G,
+         AXI_BASE_ADDR_G => (others=>'0') )
+       port map (
+         axisClk         => maxisClk,
+         axisRst         => maxisRst,
+         saxisMaster     => appObMaster   (sw),
+         saxisSlave      => appObSlave    (sw),
+         maxisMaster     => maxisObMasters(sw),
+         maxisSlave      => maxisObSlaves (sw),
+         start           => axilRegsSync(2*sw+1)(15 downto 0),
+         monRegs         => monRegs(8*sw+7 downto 8*sw+4));
+   end generate GEN_SW;
+   
 end architecture rtl;
